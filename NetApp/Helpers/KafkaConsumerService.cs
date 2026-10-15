@@ -12,13 +12,15 @@ public class KafkaConsumerService : BackgroundService
     private readonly ILogger<KafkaConsumerService> _logger;
     private readonly ConsumerConfig _config;
     private readonly string _topicName;
-    private readonly IMongoCollection<BsonDocument> _mongoCollection;
+    private readonly IMongoCollection<BsonDocument> _sysWarnsCollection;
+    private readonly IMongoCollection<BsonDocument> _adminMsgsCollection;
+    private readonly IMongoDatabase _mongoDb;
 
-    public KafkaConsumerService(ILogger<KafkaConsumerService> logger, IConfiguration configuration, 
+    public KafkaConsumerService(ILogger<KafkaConsumerService> logger, IConfiguration configuration,
     IMongoDatabase mongoDb)
     {
         _logger = logger;
-        
+
         // Define Kafka consumer configurations
         _config = new ConsumerConfig
         {
@@ -30,20 +32,22 @@ public class KafkaConsumerService : BackgroundService
 
         _topicName = configuration["Kafka:LogTopic"] ?? "log";
 
-        _mongoCollection = mongoDb.GetCollection<BsonDocument>(configuration["MongoDB:CollectionName"] ?? "Logs");
+        _sysWarnsCollection = mongoDb.GetCollection<BsonDocument>(configuration["MongoDB:SystemWarningsCollectionName"] ?? "Logs");
+        _adminMsgsCollection = mongoDb.GetCollection<BsonDocument>(configuration["MongoDB:AdminMessagesCollectionName"] ?? "Logs");
+        _mongoDb = mongoDb;
     }
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // Execute the consumer loop on a background thread to prevent blocking application startup
-        return Task.Run( () => ConsumeLoopAsync(stoppingToken), stoppingToken);
+        return Task.Run(() => ConsumeLoopAsync(stoppingToken), stoppingToken);
     }
 
     private void ConsumeLoopAsync(CancellationToken stoppingToken)
     {
         // Build the Kafka consumer instance
         using var consumer = new ConsumerBuilder<Ignore, string>(_config)
-            .SetErrorHandler((_, e) => 
+            .SetErrorHandler((_, e) =>
             {
                 _logger.LogError($"Kafka Consumer Error: {e.Reason}");
             })
@@ -60,24 +64,26 @@ public class KafkaConsumerService : BackgroundService
                 {
                     // Polls for new messages. Pass stoppingToken to handle graceful shutdown.
                     var consumeResult = consumer.Consume(stoppingToken);
-                    
+
                     if (consumeResult != null)
                     {
                         //_logger.LogInformation($"Received message: '{consumeResult.Message.Value}' from partition: {consumeResult.Partition}");
-                        
+
                         // TODO: Implement your business logic / message handling here
                         string logJson = consumeResult.Message.Value;
                         if (BsonDocument.TryParse(logJson, out BsonDocument logDocument))
                         {
-                            if(logDocument["Message"] is not null && logDocument["Message"].IsString)
+                            IMongoCollection<BsonDocument> mongoCollection = _sysWarnsCollection;
+                            if (logDocument["Message"] is not null && logDocument["Message"].IsString)
                             {
                                 string message = logDocument["Message"].AsString;
-                                if(BsonDocument.TryParse(message, out BsonDocument messageDoc))
+                                if (BsonDocument.TryParse(message, out BsonDocument messageDoc))
                                 {
                                     logDocument["Message"] = messageDoc;
+                                    mongoCollection = _adminMsgsCollection;
                                 }
                             }
-                            _mongoCollection.InsertOne(logDocument);
+                            mongoCollection.InsertOne(logDocument);
                             //Console.WriteLine($"consumed: {logDocument.ToJson()}");
                         }
                         else
