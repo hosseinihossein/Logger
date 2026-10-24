@@ -1,22 +1,19 @@
 using Confluent.Kafka;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using MongoDB.Bson;
 using MongoDB.Driver;
 
 namespace NetApp.Helpers;
 
-public class KafkaConsumerService : BackgroundService
+public class KafkaLogConsumer : BackgroundService
 {
-    private readonly ILogger<KafkaConsumerService> _logger;
+    private readonly ILogger<KafkaLogConsumer> _logger;
     private readonly ConsumerConfig _config;
     private readonly string _topicName;
     private readonly IMongoCollection<BsonDocument> _sysWarnsCollection;
     private readonly IMongoCollection<BsonDocument> _adminMsgsCollection;
-    private readonly IMongoDatabase _mongoDb;
+    //private readonly IMongoDatabase _mongoDb;
 
-    public KafkaConsumerService(ILogger<KafkaConsumerService> logger, IConfiguration configuration,
+    public KafkaLogConsumer(ILogger<KafkaLogConsumer> logger, IConfiguration configuration,
     IMongoDatabase mongoDb)
     {
         _logger = logger;
@@ -34,7 +31,7 @@ public class KafkaConsumerService : BackgroundService
 
         _sysWarnsCollection = mongoDb.GetCollection<BsonDocument>(configuration["MongoDB:SystemWarningsCollectionName"] ?? "Logs");
         _adminMsgsCollection = mongoDb.GetCollection<BsonDocument>(configuration["MongoDB:AdminMessagesCollectionName"] ?? "Logs");
-        _mongoDb = mongoDb;
+        //_mongoDb = mongoDb;
     }
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
@@ -74,10 +71,9 @@ public class KafkaConsumerService : BackgroundService
                         if (BsonDocument.TryParse(logJson, out BsonDocument logDocument))
                         {
                             IMongoCollection<BsonDocument> mongoCollection = _sysWarnsCollection;
-                            if (logDocument["Message"] is not null && logDocument["Message"].IsString)
+                            if (logDocument.TryGetValue("Message", out BsonValue messageBsonValue) && messageBsonValue.IsString)
                             {
-                                string message = logDocument["Message"].AsString;
-                                if (BsonDocument.TryParse(message, out BsonDocument messageDoc))
+                                if (BsonDocument.TryParse(messageBsonValue.AsString, out BsonDocument messageDoc))
                                 {
                                     logDocument["Message"] = messageDoc;
                                     mongoCollection = _adminMsgsCollection;

@@ -1,21 +1,13 @@
-﻿using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using MongoDB.Driver;
 using NetApp.Helpers;
 
 namespace NetApp;
 
-class Program
+public class Program
 {
-    static void Main(string[] args)
+    public static void Main(string[] args)
     {
         var builder = Host.CreateApplicationBuilder(args);
-
-
-        // Register appsettings.json configuration file
-        builder.Configuration.AddJsonFile("appsettings.json", optional: false);
 
 
         // Register IMongoClient as a Singleton
@@ -34,14 +26,13 @@ class Program
 
 
         // Register the Kafka Consumer Service as a Hosted Service
-        builder.Services.AddHostedService<KafkaConsumerService>();
+        builder.Services.AddHostedService<KafkaLogConsumer>();
 
 
-        var app = builder.Build();
+        var host = builder.Build();
 
 
         Console.WriteLine("** App is running. **");
-        app.Run();
-
+        host.Run();
     }
 }
